@@ -1,36 +1,40 @@
 package com.fattied.fl0jah.main;
 
+import java.lang.reflect.Field;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Consumer;
-
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.craftbukkit.v1_21_R3.entity.CraftPlayer;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
 // import org.bukkit.craftbukkit.v1_21_R3.entity.CraftPlayer;
 // import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 // import org.bukkit.event.entity.PlayerDeathEvent;
 // import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scheduler.BukkitTask;
-
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelDuplexHandler;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.ChannelPromise;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerEntity;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
+import net.minecraft.server.network.ServerCommonPacketListenerImpl;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.network.Connection;
 
@@ -141,6 +145,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor{
 			connection.send(npc.getAddEntityPacket(serv_ent));
 			
 			// Magic stuff. Must research
+			// Might allow client to see entity?
 			SynchedEntityData data = npc.getEntityData();
 			byte bitmask = (byte) (0x01 | 0x04 | 0x08 | 0x10 | 0x20 | 0x40); // = 127
 			data.set(new EntityDataAccessor<>(17, EntityDataSerializers.BYTE), bitmask);
@@ -168,5 +173,67 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor{
 		}
 		
 		return true;
+	}
+	
+	public void inject(Player player) throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException {
+		
+		// Packets sent/received will be handled here
+		// Developer code is executed here upon packet delivery / reception
+		ChannelDuplexHandler channelHandler = new ChannelDuplexHandler() {
+			@Override
+			public void write(ChannelHandlerContext ctx,
+					Object msg,
+					ChannelPromise promise) throws Exception {
+				super.write(ctx, msg, promise);
+			}
+			
+			// Packets coming in
+			@Override
+			public void channelRead(ChannelHandlerContext ctx,
+					Object packet) throws Exception{
+				
+				System.out.println(packet.toString());
+				super.channelRead(ctx, packet);
+			}
+		};
+		
+		// Requires reflection to access private fields/methods. 
+		// Necessary to access ChannelPipeline obj
+		Field field = ServerCommonPacketListenerImpl.class.getDeclaredField("e");
+		field.setAccessible(true);
+		
+		Connection connection = (Connection) field.get(((CraftPlayer) player).getHandle().connection);
+		
+		ChannelPipeline pipeline = connection.channel.pipeline(); // Pipeline connection between player and server
+		pipeline.addBefore("packet_handler", player.getName(), channelHandler);
+	}
+	
+	public void stop(Player player) throws IllegalArgumentException, IllegalAccessException, NoSuchFieldException, SecurityException {
+		Field field = ServerCommonPacketListenerImpl.class.getDeclaredField("e");
+		field.setAccessible(true);
+		
+		Connection connection = (Connection) field.get(((CraftPlayer) player).getHandle().connection);
+		Channel channel = connection.channel;
+		
+		channel.eventLoop().submit(() -> {
+			channel.pipeline().remove(player.getName());
+			return null;
+		});
+	}
+	
+	@EventHandler
+	public void onJoin(PlayerJoinEvent e) throws IllegalArgumentException, IllegalAccessException {
+		try {
+			this.inject(e.getPlayer());
+		} catch (NoSuchFieldException e1) {
+			e1.printStackTrace();
+		} catch (SecurityException e1) {
+			e1.printStackTrace();
+		}
+	}
+	
+	@EventHandler
+	public void onQuit(PlayerQuitEvent e) throws IllegalArgumentException, IllegalAccessException, NoSuchFieldException, SecurityException {
+		this.stop(e.getPlayer());
 	}
 }
