@@ -14,6 +14,7 @@ public class Main extends JavaPlugin{
 		ShapedRecipe recipe;
 		EntityPlayer player;
 		GameProfile prof;
+		// ServerPlayer pl; Mojang mapping (Cannot find)
 		System.out.println("[ExperimentPlugin] Plugin Successfully Enabled!");
 	}
 	
