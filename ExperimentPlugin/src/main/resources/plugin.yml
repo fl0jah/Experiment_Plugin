@@ -2,3 +2,8 @@ name: ${name}
 version: ${version}
 description: ${description}
 main: ${mainClass}
+commands:
+ npc:
+  description: Spawns an npc at player location (Experimental NMS)
+  usage: /<command>
+  permission: experimentplugin.npc.spawn
